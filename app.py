@@ -3,8 +3,18 @@ from fastapi.responses import FileResponse
 from openpyxl import load_workbook
 import tempfile
 import shutil
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  
+    allow_credentials=True,
+    allow_methods=["*"],  
+    allow_headers=["*"],  
+)
+
 
 @app.post("/upload/")
 async def upload_excel(file: UploadFile = File(...)):
