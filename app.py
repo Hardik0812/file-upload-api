@@ -51,11 +51,27 @@ async def upload_excel(file: UploadFile = File(...)):
                 if response:
                     # Match names
                     api_name = response.get("name", "").upper()
-                    first_name = row.get("First Name", "").upper()
-                    last_name = row.get("Last Name", "").upper()
+                    excel_first_name = row['First Name'].upper()
+                    excel_last_name = row['Last Name'].upper()
 
-                    is_match = api_name == first_name or api_name == last_name
+                    # Normalize the API name by removing extra characters and splitting
+                    api_name_cleaned = api_name.replace("?", "").replace(",", "").strip()
+                    api_parts = api_name_cleaned.split()
 
+                    # Ensure we have at least two parts (first and last name)
+                    if len(api_parts) >= 2:
+                        api_first_name = api_parts[0]
+                        api_last_name = api_parts[-1]
+                    else:
+                        api_first_name = api_parts[0] if api_parts else ""
+                        api_last_name = ""
+
+                    # Check for various match conditions
+                    is_match = (
+                        (f"{excel_first_name} {excel_last_name}" == api_name_cleaned) or
+                        (api_first_name == excel_last_name) or
+                        (api_last_name == excel_first_name)
+                    )
 
                     # Append the data for the second sheet
                     response_data.append(
@@ -69,6 +85,7 @@ async def upload_excel(file: UploadFile = File(...)):
                         }
                     )
 
+    print("response_data",response_data)
     # Create an Excel output
     output_file = BytesIO()
     with pd.ExcelWriter(output_file, engine="openpyxl") as writer:
