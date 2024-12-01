@@ -51,8 +51,12 @@ async def upload_excel(file: UploadFile = File(...)):
                 if response:
                     # Match names
                     api_name = response.get("name", "").upper()
-                    excel_name = f"{row['First Name']} {row['Last Name']}".upper()
-                    is_match = api_name == excel_name
+                    first_name = row.get("First Name", "").upper()
+                    last_name = row.get("Last Name", "").upper()
+
+                    is_match = api_name == first_name or api_name == last_name
+
+
                     # Append the data for the second sheet
                     response_data.append(
                         {
