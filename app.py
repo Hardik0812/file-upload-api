@@ -49,29 +49,28 @@ async def upload_excel(file: UploadFile = File(...)):
                 response = query_cnam_api(phone)
                 print("response",response)
                 if response:
-                    # Match names
-                    api_name = response.get("name", "").upper()
-                    excel_first_name = row['First Name'].upper()
-                    excel_last_name = row['Last Name'].upper()
 
-                    # Normalize the API name by removing extra characters and splitting
+                    api_name = response.get("name", "").upper()
+                    excel_first_name = row['First Name'].split()[0].upper()  # Extract Excel first name
+                    excel_last_name = row['Last Name'].split()[-1].upper()  # Extract Excel last name
+
+                    # Clean and split the API name
                     api_name_cleaned = api_name.replace("?", "").replace(",", "").strip()
                     api_parts = api_name_cleaned.split()
 
-                    # Ensure we have at least two parts (first and last name)
-                    if len(api_parts) >= 2:
-                        api_first_name = api_parts[0]
-                        api_last_name = api_parts[-1]
-                    else:
-                        api_first_name = api_parts[0] if api_parts else ""
-                        api_last_name = ""
+                    # Extract API first and last names
+                    api_first_name = api_parts[0] if len(api_parts) > 0 else ""
+                    api_last_name = api_parts[-1] if len(api_parts) > 1 else ""
 
-                    # Check for various match conditions
+                    # Match conditions: Either first names match or last names match
                     is_match = (
-                        (f"{excel_first_name} {excel_last_name}" == api_name_cleaned) or
-                        (api_first_name == excel_last_name) or
-                        (api_last_name == excel_first_name)
-                    )
+                        api_first_name == excel_first_name or
+                        api_last_name == excel_last_name or 
+                        api_first_name == excel_last_name or
+                        api_last_name == excel_first_name
+                        )
+    
+                    
 
                     # Append the data for the second sheet
                     response_data.append(
