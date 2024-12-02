@@ -17,6 +17,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+def clean_name(name):
+    """Cleans special characters and splits names into parts."""
+    return name.replace("?", "").replace(",", "").strip().upper().split()
+
 
 @app.post("/upload/")
 async def upload_excel(file: UploadFile = File(...)):
@@ -48,31 +52,49 @@ async def upload_excel(file: UploadFile = File(...)):
                 # Query the API
                 response = query_cnam_api(phone)
                 print("response",response)
+                
                 if response:
-
                     api_name = response.get("name", "").upper()
                     excel_first_name = row['First Name'].split()[0].upper()  # Extract Excel first name
                     excel_last_name = row['Last Name'].split()[-1].upper()  # Extract Excel last name
 
-                    # Clean and split the API name
+                    # Clean and split API name
                     api_name_cleaned = api_name.replace("?", "").replace(",", "").strip()
-                    print("api_name_cleaned",api_name_cleaned)
-                    api_parts = api_name_cleaned.split()
+                    print("api_name_cleaned", api_name_cleaned)
+                    api_name_parts = clean_name(api_name_cleaned)  # Example: ['ROBO', 'TUCKER', 'LA']
 
-                    # Extract API first and last names
-                    api_first_name = api_parts[0] if len(api_parts) > 0 else ""
-                    api_last_name = api_parts[-1] if len(api_parts) > 1 else ""
-                    api_third_name = api_parts[1] if len(api_parts) > 2 else ""
+                    # Clean and split Excel name
+                    excel_name_parts = clean_name(f"{row['First Name']} {row['Last Name']}")  # Example: ['LAWRENCE', 'TUCKER']
 
-                    # Match conditions: Either first names match or last names match
-                    is_match = (
-                                api_first_name == excel_first_name or   # API first name matches Excel first name
-                                api_first_name == excel_last_name or    # API first name matches Excel last name
-                                api_third_name == excel_first_name or   # API middle/third name matches Excel first name
-                                api_third_name == excel_last_name or    # API middle/third name matches Excel last name
-                                api_last_name == excel_last_name or     # API last name matches Excel last name
-                                api_last_name == excel_first_name       # API last name matches Excel first name
-                            )
+                    # Match if any part of API name matches any part of Excel name
+                    is_match = any(api_part in excel_name_parts for api_part in api_name_parts)
+                # if response:
+
+                #     api_name = response.get("name", "").upper()
+                #     excel_first_name = row['First Name'].split()[0].upper()  # Extract Excel first name
+                #     excel_last_name = row['Last Name'].split()[-1].upper()  # Extract Excel last name
+
+                #     # Clean and split the API name
+                #     api_name_cleaned = api_name.replace("?", "").replace(",", "").strip()
+                #     print("api_name_cleaned",api_name_cleaned)
+                #     api_parts = api_name_cleaned.split()
+
+                #     # Extract API first and last names
+                #     # api_first_name = api_parts[0] if len(api_parts) > 0 else ""
+                #     # api_last_name = api_parts[-1] if len(api_parts) > 1 else ""
+                #     # api_third_name = api_parts[1] if len(api_parts) > 2 else ""
+                #     api_name_parts = clean_name(api_name)  # Example: ['ROBO', 'TUCKER', 'LA']
+                #     excel_name_parts = clean_name(excel_name)
+
+                #     # Match conditions: Either first names match or last names match
+                #     is_match = (
+                #                 api_first_name == excel_first_name or   # API first name matches Excel first name
+                #                 api_first_name == excel_last_name or    # API first name matches Excel last name
+                #                 api_third_name == excel_first_name or   # API middle/third name matches Excel first name
+                #                 api_third_name == excel_last_name or    # API middle/third name matches Excel last name
+                #                 api_last_name == excel_last_name or     # API last name matches Excel last name
+                #                 api_last_name == excel_first_name       # API last name matches Excel first name
+                #             )
                                 
                     
 
