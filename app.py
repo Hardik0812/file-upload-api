@@ -56,20 +56,24 @@ async def upload_excel(file: UploadFile = File(...)):
 
                     # Clean and split the API name
                     api_name_cleaned = api_name.replace("?", "").replace(",", "").strip()
+                    print("api_name_cleaned",api_name_cleaned)
                     api_parts = api_name_cleaned.split()
 
                     # Extract API first and last names
                     api_first_name = api_parts[0] if len(api_parts) > 0 else ""
                     api_last_name = api_parts[-1] if len(api_parts) > 1 else ""
+                    api_third_name = api_parts[1] if len(api_parts) > 2 else ""
 
                     # Match conditions: Either first names match or last names match
                     is_match = (
-                        api_first_name == excel_first_name or
-                        api_last_name == excel_last_name or 
-                        api_first_name == excel_last_name or
-                        api_last_name == excel_first_name
-                        )
-    
+                                api_first_name == excel_first_name or   # API first name matches Excel first name
+                                api_first_name == excel_last_name or    # API first name matches Excel last name
+                                api_third_name == excel_first_name or   # API middle/third name matches Excel first name
+                                api_third_name == excel_last_name or    # API middle/third name matches Excel last name
+                                api_last_name == excel_last_name or     # API last name matches Excel last name
+                                api_last_name == excel_first_name       # API last name matches Excel first name
+                            )
+                                
                     
 
                     # Append the data for the second sheet
