@@ -1,4 +1,5 @@
 from io import BytesIO
+import uvicorn
 
 import pandas as pd
 from fastapi import FastAPI, File, HTTPException, UploadFile
@@ -147,3 +148,8 @@ async def upload_excel(file: UploadFile = File(...)):
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": "attachment; filename=processed_excel.xlsx"}
     )
+
+if __name__ == "__main__":
+    # Use the PORT environment variable for Cloud Run compatibility
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
