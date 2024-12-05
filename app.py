@@ -1,155 +1,133 @@
+import re
 from io import BytesIO
-import uvicorn
 
 import pandas as pd
 from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.middleware.cors import CORSMiddleware
-from openpyxl.styles import PatternFill
 from fastapi.responses import StreamingResponse
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill
+
 from utils import clean_phone_number, query_cnam_api
 
 app = FastAPI()
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 def clean_name(name):
-    """Cleans special characters and splits names into parts."""
-    return name.replace("?", "").replace(",", "").strip().upper().split()
+    return re.findall(r"\w+", name.upper())
 
 
 @app.post("/upload/")
 async def upload_excel(file: UploadFile = File(...)):
-
     try:
-        # Load the Excel file into pandas
+        # Read file content
         content = await file.read()
-        data = pd.read_excel(BytesIO(content))
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid Excel file: {e}")
 
-    # Columns to process for phone numbers
-    phone_columns = ["Phone1", "Phone2", "Phone3"]
+        # Check file extension
+        if file.filename.endswith((".xls", ".xlsx")):
+            # Read Excel file
+            data = pd.read_excel(BytesIO(content))
+        elif file.filename.endswith(".csv"):
+            # Read CSV file
+            data = pd.read_csv(BytesIO(content))
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Unsupported file format. Please upload Excel or CSV files.",
+            )
 
-    # Clean phone numbers
-    for col in phone_columns:
-        data[col] = data[col].apply(clean_phone_number)
+        print(data, "data")
+        # Filter columns to include only "Phone n" or "Phonen" (e.g., Phone 1, Phone1, Phone 2, Phone2, etc.)
+        phone_columns = [
+            col
+            for col in data.columns
+            if re.fullmatch(r"(Relative\d* )?Phone ?\d+$", col, re.IGNORECASE)
+        ]
 
-    print("col",col)
-    # Create a list to store results for the second sheet
-    response_data = []
+        print("phone_columns", phone_columns)
+        if not phone_columns:
+            return {
+                "message": "No columns matching 'Phone n' or 'Phonen' found in the uploaded file."
+            }
 
-    # Iterate over phone numbers and query the API
-    for index, row in data.iterrows():
-        for col in phone_columns:
-            phone = row[col]
-            print("phone",phone)
-            if phone:
-                # Query the API
-                response = query_cnam_api(phone)
-                print("response",response)
-                
-                if response:
-                    api_name = response.get("name", "").upper()
-                    excel_first_name = row['First Name'].split()[0].upper()  # Extract Excel first name
-                    excel_last_name = row['Last Name'].split()[-1].upper()  # Extract Excel last name
+        # Add Result columns for each Phone column
+        for phone_column in phone_columns:
+            result_column = f"{phone_column} Result"
+            data[result_column] = ""  # Initialize the Result columns
 
-                    # Clean and split API name
-                    api_name_cleaned = api_name.replace("?", "").replace(",", "").strip()
-                    print("api_name_cleaned", api_name_cleaned)
-                    api_name_parts = clean_name(api_name_cleaned)  # Example: ['ROBO', 'TUCKER', 'LA']
+        # Process phone data and populate results
+        for _, row in data.iterrows():
+            for phone_column in phone_columns:
+                phone = row[phone_column]
+                print("phone", phone)
+                phone_str = str(phone)
 
-                    # Clean and split Excel name
-                    excel_name_parts = clean_name(f"{row['First Name']} {row['Last Name']}")  # Example: ['LAWRENCE', 'TUCKER']
+                cleaned_phone = clean_phone_number(phone_str)
 
-                    # Match if any part of API name matches any part of Excel name
-                    is_match = any(api_part in excel_name_parts for api_part in api_name_parts)
-                # if response:
+                print("cleaned_phone", cleaned_phone)
 
-                #     api_name = response.get("name", "").upper()
-                #     excel_first_name = row['First Name'].split()[0].upper()  # Extract Excel first name
-                #     excel_last_name = row['Last Name'].split()[-1].upper()  # Extract Excel last name
+                # If phone number is not NaN
+                api_response = query_cnam_api(cleaned_phone)
+                print("api_response", api_response)
 
-                #     # Clean and split the API name
-                #     api_name_cleaned = api_name.replace("?", "").replace(",", "").strip()
-                #     print("api_name_cleaned",api_name_cleaned)
-                #     api_parts = api_name_cleaned.split()
-
-                #     # Extract API first and last names
-                #     # api_first_name = api_parts[0] if len(api_parts) > 0 else ""
-                #     # api_last_name = api_parts[-1] if len(api_parts) > 1 else ""
-                #     # api_third_name = api_parts[1] if len(api_parts) > 2 else ""
-                #     api_name_parts = clean_name(api_name)  # Example: ['ROBO', 'TUCKER', 'LA']
-                #     excel_name_parts = clean_name(excel_name)
-
-                #     # Match conditions: Either first names match or last names match
-                #     is_match = (
-                #                 api_first_name == excel_first_name or   # API first name matches Excel first name
-                #                 api_first_name == excel_last_name or    # API first name matches Excel last name
-                #                 api_third_name == excel_first_name or   # API middle/third name matches Excel first name
-                #                 api_third_name == excel_last_name or    # API middle/third name matches Excel last name
-                #                 api_last_name == excel_last_name or     # API last name matches Excel last name
-                #                 api_last_name == excel_first_name       # API last name matches Excel first name
-                #             )
-                                
-                    
-
-                    # Append the data for the second sheet
-                    response_data.append(
-                        {
-                            "Row": index + 2,  # Excel row starts from 1, header row + 1
-                            "Phone Column": col,
-                            "Phone Number": phone,
-                            "API Name": response.get("name", ""),
-                            "Excel Name": f"{row['First Name']} {row['Last Name']}",
-                            "Match": "Yes" if is_match else "No",
-                        }
+                if api_response:
+                    api_name = api_response.get("name", "").upper()
+                    api_name_parts = clean_name(api_name)
+                    excel_name_parts = clean_name(
+                        f"{row['First Name']} {row['Last Name']}"
+                    )
+                    is_match = any(
+                        api_part in excel_name_parts for api_part in api_name_parts
                     )
 
-    print("response_data",response_data)
-    # Create an Excel output
-    output_file = BytesIO()
-    with pd.ExcelWriter(output_file, engine="openpyxl") as writer:
-        data.to_excel(writer, sheet_name="Original Data", index=False)
-        response_df = pd.DataFrame(response_data)
-        response_df.to_excel(writer, sheet_name="API Responses", index=False)
+                    data.at[row.name, f"{phone_column} Result"] = (
+                        "Yes" if is_match else "No"
+                    )
+                    data.at[row.name, f"{phone_column} API Name"] = api_name
 
-        # Access the workbook and apply conditional formatting
-        wb = writer.book
-        ws = wb["API Responses"]
+        reordered_columns = []
+        for phone_column in phone_columns:
+            reordered_columns.append(f"{phone_column} API Name")
+            reordered_columns.append(f"{phone_column} Result")
 
-        green_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
-        red_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+        other_columns = [col for col in data.columns if col not in reordered_columns]
+        final_columns = other_columns + reordered_columns
+        data = data[final_columns]
 
-        # Apply conditional formatting
-        for row in range(2, ws.max_row + 1):  # Skip header row
-            match_cell = ws[f"F{row}"]  # "Match" column
-            if match_cell.value == "Yes":
-                for col in range(1, ws.max_column + 1):
-                    ws.cell(row=row, column=col).fill = green_fill
-            else:
-                for col in range(1, ws.max_column + 1):
-                    ws.cell(row=row, column=col).fill = red_fill
+        # Save to a new Excel sheet with formatting
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            data.to_excel(writer, index=False, sheet_name="Processed Data")
+            worksheet = writer.sheets["Processed Data"]
 
-        # Save the workbook to the output stream
-        wb.save(output_file)
+            # Apply conditional formatting for result columns
+            for phone_column in phone_columns:
+                result_column = f"{phone_column} Result"
+                api_name_column = f"{phone_column} API Name"
+                result_col_idx = data.columns.get_loc(result_column) + 1
+                api_name_col_idx = data.columns.get_loc(api_name_column) + 1
 
-    # Reset file pointer for download
-    output_file.seek(0)
+                for row_idx in range(2, len(data) + 2):  # Skip header row
+                    # Format Result column
+                    result_cell = worksheet.cell(row=row_idx, column=result_col_idx)
+                    if result_cell.value == "Yes":
+                        result_cell.fill = PatternFill(
+                            start_color="00FF00", fill_type="solid"
+                        )  # Green
+                        result_cell.font = Font(color="000000")  # Black text
+                    elif result_cell.value == "No":
+                        result_cell.fill = PatternFill(
+                            start_color="FF0000", fill_type="solid"
+                        )  # Red
+                        result_cell.font = Font(color="FFFFFF")  # White text
 
-    # Return as a streaming response
-    return StreamingResponse(
-        output_file,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": "attachment; filename=processed_excel.xlsx"}
-    )
+        output.seek(0)
+        return StreamingResponse(
+            output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={
+                "Content-Disposition": "attachment; filename=processed_excel.xlsx"
+            },
+        )
 
-if __name__ == "__main__":
-    # Use the PORT environment variable for Cloud Run compatibility
-    port = int(os.getenv("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
