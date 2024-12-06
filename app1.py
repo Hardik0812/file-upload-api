@@ -4,6 +4,7 @@ import re
 import pandas as pd
 from fastapi import FastAPI, File, UploadFile
 from fastapi.responses import JSONResponse
+from openpyxl import load_workbook
 
 from utils import clean_phone_number, query_cnam_api
 
@@ -31,7 +32,7 @@ def process_file():
     phone_columns = [
         col
         for col in headers
-        if re.fullmatch(r"(Relative\d* )?Phone ?\d+$", col, re.IGNORECASE)
+        if re.fullmatch(r"(Relative ?\d+ )?Phone\d+$", col, re.IGNORECASE)
     ]
     new_column = ["",""]
     for phone_column in phone_columns:
@@ -49,6 +50,8 @@ def process_file():
     df = df.reindex(columns=updated_columns)
     df.to_excel(file_path, index=False)
 
+    wb = load_workbook(file_path)
+    sheet = wb.active
 
     for index, row in df.iterrows():
         print(row)
@@ -57,6 +60,7 @@ def process_file():
             phone_number = row[column]
             clean_number = clean_phone_number(str(phone_number))
             api_response = query_cnam_api(clean_number)
+            print(api_response)
             api_name = api_response.get("name", "").upper()
             api_name_parts = clean_name(api_name)
             excel_name_parts = clean_name(f"{row['First Name']} {row['Last Name']}")
@@ -65,11 +69,17 @@ def process_file():
                     )
                     
             if is_match:
-                col_index = len(row) 
-                df.at[index, col_index] = clean_number
-                df.at[index, col_index + 1] = "yes"
+                col_index = len(row)  - 26 + (int_idx *2 )
+                sheet.cell(index + 2, col_index).value = clean_number
+                sheet.cell(index + 2, col_index + 1).value = api_name
+                # df.at[2, col_index + 1] = "yes"
+            else:
+                col_index = len(row)  - 9 + (int_idx *2 )
+                sheet.cell(index + 2, col_index).value = clean_number
+                sheet.cell(index + 2, col_index + 1).value = api_name
 
-    df.to_excel(file_path, index=False)
+
+    wb.save(file_path)
     
 
     if not all(header in valid_headers for header in headers):
