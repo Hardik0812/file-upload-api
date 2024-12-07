@@ -8,8 +8,17 @@ from openpyxl import load_workbook
 from openpyxl.styles import PatternFill
 
 from utils import clean_phone_number, query_cnam_api
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Replace "*" with your frontend's URL for stricter rules, e.g., ["http://localhost:3000"]
+    allow_credentials=True,
+    allow_methods=["*"],  # Use specific methods like ["GET", "POST"] if needed
+    allow_headers=["*"],  # Specify headers if needed
+)
 
 # Define the upload folder
 UPLOAD_FOLDER = "./uploads"
