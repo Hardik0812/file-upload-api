@@ -1,133 +1,112 @@
+import os
 import re
-from io import BytesIO
 
 import pandas as pd
-from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import StreamingResponse
-from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill
+from fastapi import FastAPI, File, UploadFile
+from fastapi.responses import FileResponse, JSONResponse
+from openpyxl import load_workbook
+from openpyxl.styles import PatternFill
 
 from utils import clean_phone_number, query_cnam_api
 
 app = FastAPI()
+
+# Define the upload folder
+UPLOAD_FOLDER = "./uploads"
+# Create the upload folder if it doesn't exist
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
 
 
 def clean_name(name):
     return re.findall(r"\w+", name.upper())
 
 
-@app.post("/upload/")
-async def upload_excel(file: UploadFile = File(...)):
-    try:
-        # Read file content
-        content = await file.read()
+def process_file(file_path):
+    df = pd.read_excel(file_path)
 
-        # Check file extension
-        if file.filename.endswith((".xls", ".xlsx")):
-            # Read Excel file
-            data = pd.read_excel(BytesIO(content))
-        elif file.filename.endswith(".csv"):
-            # Read CSV file
-            data = pd.read_csv(BytesIO(content))
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail="Unsupported file format. Please upload Excel or CSV files.",
+    valid_headers = ["phone n", "phonen"]
+    headers = [col for col in df.columns]
+    phone_columns = [
+        col
+        for col in headers
+        if re.fullmatch(r"(Relative\s?\d*\s?)?[Pp]hone\s?\d+$", col)
+    ]
+
+    new_column = ["", ""]
+    for phone_column in phone_columns:
+        new_column.append(phone_column + "No")
+        new_column.append(phone_column + "API Name")
+
+    new_column.append("")
+    new_column.append("")
+
+    for phone_column in phone_columns:
+        new_column.append(phone_column + "No")
+        new_column.append(phone_column + "API Name")
+
+    updated_columns = df.columns.tolist() + new_column
+    df = df.reindex(columns=updated_columns)
+    df.to_excel(file_path, index=False)
+
+    wb = load_workbook(file_path)
+    sheet = wb.active
+
+    for index, row in df.iterrows():
+        for int_idx, column in enumerate(phone_columns):
+            phone_number = row[column]
+            clean_number = clean_phone_number(str(phone_number))
+            api_response = query_cnam_api(clean_number)
+            api_name = api_response.get("name", "").upper()
+            api_name_parts = clean_name(api_name)
+            excel_name_parts = clean_name(f"{row['First Name']} {row['Last Name']}")
+            is_match = any(api_part in excel_name_parts for api_part in api_name_parts)
+            light_green_fill = PatternFill(
+                start_color="CCFFCC", end_color="CCFFCC", fill_type="solid"
+            )
+            light_red_fill = PatternFill(
+                start_color="FFCCCC", end_color="FFCCCC", fill_type="solid"
             )
 
-        print(data, "data")
-        # Filter columns to include only "Phone n" or "Phonen" (e.g., Phone 1, Phone1, Phone 2, Phone2, etc.)
-        phone_columns = [
-            col
-            for col in data.columns
-            if re.fullmatch(r"(Relative\d* )?Phone ?\d+$", col, re.IGNORECASE)
-        ]
+            if is_match:
+                col_index = len(row) - (len(phone_columns) * 4) + (int_idx * 2) - 1
+                sheet.cell(index + 2, col_index).value = clean_number
+                sheet.cell(index + 2, col_index + 1).value = api_name
+                sheet.cell(index + 2, col_index + 1).fill = light_green_fill
+            elif not is_match:
+                col_index = len(row) - (len(phone_columns) * 2) + (int_idx * 2) - 1
+                sheet.cell(index + 2, col_index).value = clean_number
+                sheet.cell(index + 2, col_index + 1).value = api_name
+                sheet.cell(index + 2, col_index + 1).fill = light_red_fill
 
-        print("phone_columns", phone_columns)
-        if not phone_columns:
-            return {
-                "message": "No columns matching 'Phone n' or 'Phonen' found in the uploaded file."
-            }
+    wb.save(file_path)
 
-        # Add Result columns for each Phone column
-        for phone_column in phone_columns:
-            result_column = f"{phone_column} Result"
-            data[result_column] = ""  # Initialize the Result columns
 
-        # Process phone data and populate results
-        for _, row in data.iterrows():
-            for phone_column in phone_columns:
-                phone = row[phone_column]
-                print("phone", phone)
-                phone_str = str(phone)
-
-                cleaned_phone = clean_phone_number(phone_str)
-
-                print("cleaned_phone", cleaned_phone)
-
-                # If phone number is not NaN
-                api_response = query_cnam_api(cleaned_phone)
-                print("api_response", api_response)
-
-                if api_response:
-                    api_name = api_response.get("name", "").upper()
-                    api_name_parts = clean_name(api_name)
-                    excel_name_parts = clean_name(
-                        f"{row['First Name']} {row['Last Name']}"
-                    )
-                    is_match = any(
-                        api_part in excel_name_parts for api_part in api_name_parts
-                    )
-
-                    data.at[row.name, f"{phone_column} Result"] = (
-                        "Yes" if is_match else "No"
-                    )
-                    data.at[row.name, f"{phone_column} API Name"] = api_name
-
-        reordered_columns = []
-        for phone_column in phone_columns:
-            reordered_columns.append(f"{phone_column} API Name")
-            reordered_columns.append(f"{phone_column} Result")
-
-        other_columns = [col for col in data.columns if col not in reordered_columns]
-        final_columns = other_columns + reordered_columns
-        data = data[final_columns]
-
-        # Save to a new Excel sheet with formatting
-        output = BytesIO()
-        with pd.ExcelWriter(output, engine="openpyxl") as writer:
-            data.to_excel(writer, index=False, sheet_name="Processed Data")
-            worksheet = writer.sheets["Processed Data"]
-
-            # Apply conditional formatting for result columns
-            for phone_column in phone_columns:
-                result_column = f"{phone_column} Result"
-                api_name_column = f"{phone_column} API Name"
-                result_col_idx = data.columns.get_loc(result_column) + 1
-                api_name_col_idx = data.columns.get_loc(api_name_column) + 1
-
-                for row_idx in range(2, len(data) + 2):  # Skip header row
-                    # Format Result column
-                    result_cell = worksheet.cell(row=row_idx, column=result_col_idx)
-                    if result_cell.value == "Yes":
-                        result_cell.fill = PatternFill(
-                            start_color="00FF00", fill_type="solid"
-                        )  # Green
-                        result_cell.font = Font(color="000000")  # Black text
-                    elif result_cell.value == "No":
-                        result_cell.fill = PatternFill(
-                            start_color="FF0000", fill_type="solid"
-                        )  # Red
-                        result_cell.font = Font(color="FFFFFF")  # White text
-
-        output.seek(0)
-        return StreamingResponse(
-            output,
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={
-                "Content-Disposition": "attachment; filename=processed_excel.xlsx"
-            },
+@app.post("/upload")
+async def upload_file(file: UploadFile = File(...)):
+    # Check if the file is an xlsx file
+    if file.filename.split(".")[-1].lower() != "xlsx":
+        return JSONResponse(
+            content={"error": "Only xlsx files are allowed"}, status_code=400
         )
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    # Remove any existing files in the upload folder
+    for existing_file in os.listdir(UPLOAD_FOLDER):
+        file_path = os.path.join(UPLOAD_FOLDER, existing_file)
+        if os.path.isfile(file_path):
+            os.remove(file_path)
+
+    # Save the file to the upload folder
+    file_path = os.path.join(UPLOAD_FOLDER, file.filename)
+    with open(file_path, "wb") as f:
+        f.write(file.file.read())
+
+    # Process the uploaded file
+    process_file(file_path)
+
+    # Send the processed file as a response
+    return FileResponse(
+        path=file_path,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        filename="processed_file.xlsx",
+    )
