@@ -17,7 +17,7 @@ def query_cnam_api(phone_number):
         if response.status_code == 200:
             return response.json()
         else:
-            return None
+            return {}
     except requests.exceptions.RequestException as e:
         print(f"Error querying API for {phone_number}: {e}")
-        return None
+        return {}
