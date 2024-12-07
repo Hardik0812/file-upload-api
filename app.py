@@ -3,7 +3,7 @@ import re
 
 import pandas as pd
 from fastapi import FastAPI, File, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill
 
@@ -114,8 +114,14 @@ async def upload_file(file: UploadFile = File(...)):
     process_file(file_path)
 
     # Send the processed file as a response
-    return FileResponse(
-        path=file_path,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        filename="processed_file.xlsx",
-    )
+    # return FileResponse(
+    #     path=file_path,
+    #     media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    #     filename="processed_file.xlsx",
+    # )
+    return StreamingResponse(
+            file_path,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={
+                "Content-Disposition": "attachment; filename=processed_excel.xlsx"
+            })
