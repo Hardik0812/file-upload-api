@@ -69,15 +69,13 @@ def process_file():
                     )
                     
             if is_match:
-                col_index = len(row)  - 26 + (int_idx *2 )
+                col_index = len(row)  - (len(phone_columns) * 4) + (int_idx *2 ) - 1
                 sheet.cell(index + 2, col_index).value = clean_number
                 sheet.cell(index + 2, col_index + 1).value = api_name
-                # df.at[2, col_index + 1] = "yes"
-            else:
-                col_index = len(row)  - 9 + (int_idx *2 )
+            elif not is_match:
+                col_index = len(row)  - (len(phone_columns) * 2) + (int_idx *2 ) - 1
                 sheet.cell(index + 2, col_index).value = clean_number
                 sheet.cell(index + 2, col_index + 1).value = api_name
-
 
     wb.save(file_path)
     
