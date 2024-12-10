@@ -14,7 +14,9 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Replace "*" with your frontend's URL for stricter rules, e.g., ["http://localhost:3000"]
+    allow_origins=[
+        "*"
+    ],  # Replace "*" with your frontend's URL for stricter rules, e.g., ["http://localhost:3000"]
     allow_credentials=True,
     allow_methods=["*"],  # Use specific methods like ["GET", "POST"] if needed
     allow_headers=["*"],  # Specify headers if needed
@@ -63,28 +65,35 @@ def process_file(file_path):
 
     relative_values = list()
     for phone_column in phone_columns:
-    
-        relative_value = re.split(r'(?<=\d) ', phone_column)[0]
-        relative_values.append(relative_value)
 
+        relative_value = re.split(r"(?<=\d) ", phone_column)[0]
+        relative_values.append(relative_value)
 
     for index, row in df.iterrows():
         for int_idx, column in enumerate(phone_columns):
             phone_number = row[column]
-            print("phone_number",phone_number)
+            print("phone_number", phone_number)
             clean_number = clean_phone_number(str(phone_number))
-            print("clean_number",clean_number[0:10])
+            print("clean_number", clean_number[0:10])
             api_response = query_cnam_api(clean_number)
 
             api_name = api_response.get("name", "").upper()
             api_name_parts = clean_name(api_name)
 
-            
             # for relative_value in relative_values:
-            first_name_column = f"{relative_values[int_idx]} First Name" if "Relative" in relative_values[int_idx] else "First Name"
-            last_name_column = f"{relative_values[int_idx]} Last Name" if "Relative" in relative_values[int_idx] else "Last Name"
-            excel_name_parts = clean_name(f"{row[first_name_column]} {row[last_name_column]}")
-
+            first_name_column = (
+                f"{relative_values[int_idx]} First Name"
+                if "Relative" in relative_values[int_idx]
+                else "First Name"
+            )
+            last_name_column = (
+                f"{relative_values[int_idx]} Last Name"
+                if "Relative" in relative_values[int_idx]
+                else "Last Name"
+            )
+            excel_name_parts = clean_name(
+                f"{row[first_name_column]} {row[last_name_column]}"
+            )
 
             # excel_name_parts = clean_name(f"{row['First Name']} {row['Last Name']}")
 
@@ -138,9 +147,3 @@ async def upload_file(file: UploadFile = File(...)):
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         filename="processed_file.xlsx",
     )
-    # return StreamingResponse(
-    #         file_path,
-    #         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    #         headers={
-    #             "Content-Disposition": "attachment; filename=processed_excel.xlsx"
-    #         })
