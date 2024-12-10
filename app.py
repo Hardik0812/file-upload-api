@@ -3,12 +3,12 @@ import re
 
 import pandas as pd
 from fastapi import FastAPI, File, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill
 
 from utils import clean_phone_number, query_cnam_api
-from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 
@@ -61,14 +61,33 @@ def process_file(file_path):
     wb = load_workbook(file_path)
     sheet = wb.active
 
+    relative_values = list()
+    for phone_column in phone_columns:
+    
+        relative_value = re.split(r'(?<=\d) ', phone_column)[0]
+        relative_values.append(relative_value)
+
+
     for index, row in df.iterrows():
         for int_idx, column in enumerate(phone_columns):
             phone_number = row[column]
+            print("phone_number",phone_number)
             clean_number = clean_phone_number(str(phone_number))
+            print("clean_number",clean_number[0:10])
             api_response = query_cnam_api(clean_number)
+
             api_name = api_response.get("name", "").upper()
             api_name_parts = clean_name(api_name)
-            excel_name_parts = clean_name(f"{row['First Name']} {row['Last Name']}")
+
+            
+            # for relative_value in relative_values:
+            first_name_column = f"{relative_values[int_idx]} First Name" if "Relative" in relative_values[int_idx] else "First Name"
+            last_name_column = f"{relative_values[int_idx]} Last Name" if "Relative" in relative_values[int_idx] else "Last Name"
+            excel_name_parts = clean_name(f"{row[first_name_column]} {row[last_name_column]}")
+
+
+            # excel_name_parts = clean_name(f"{row['First Name']} {row['Last Name']}")
+
             is_match = any(api_part in excel_name_parts for api_part in api_name_parts)
             light_green_fill = PatternFill(
                 start_color="CCFFCC", end_color="CCFFCC", fill_type="solid"
@@ -83,7 +102,7 @@ def process_file(file_path):
                 sheet.cell(index + 2, col_index + 1).value = api_name
                 sheet.cell(index + 2, col_index + 1).fill = light_green_fill
             elif not is_match:
-                col_index = len(row) - (len(phone_columns) * 2) + (int_idx * 2) - 1
+                col_index = len(row) - (len(phone_columns) * 2) + (int_idx * 2) + 1
                 sheet.cell(index + 2, col_index).value = clean_number
                 sheet.cell(index + 2, col_index + 1).value = api_name
                 sheet.cell(index + 2, col_index + 1).fill = light_red_fill
