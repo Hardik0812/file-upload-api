@@ -1,4 +1,5 @@
 import asyncio
+import concurrent.futures
 import os
 import re
 from io import BytesIO
@@ -24,12 +25,10 @@ app.add_middleware(
     allow_headers=["*"],  # Specify headers if needed
 )
 
-
 UPLOAD_FOLDER = "./uploads"
 
 def clean_name(name):
     return re.findall(r"\w+", name.upper())
-
 
 @app.post("/uploadfile/")
 async def create_upload_file(file: UploadFile = File(...)):
@@ -98,16 +97,21 @@ def process_file(file_path):
         relative_value = re.split(r"(?<=\d) ", phone_column)[0]
         relative_values.append(relative_value)
 
-    for index, row in df.iterrows():
-        for int_idx, column in enumerate(phone_columns):
-            phone_number = row[column]
-            print("phone_number", phone_number)
-            clean_number = clean_phone_number(str(phone_number))
-            print("clean_number", clean_number[0:10])
-            api_response = query_cnam_api(clean_number)
-            print("Phone nOmber", clean_number, " -->>api_response", api_response)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+        futures = []
+        for index, row in df.iterrows():
+            for int_idx, column in enumerate(phone_columns):
+                phone_number = row[column]
+                future = executor.submit(query_cnam_api, clean_phone_number(str(phone_number)))
+                futures.append((index, row, int_idx, future))
 
-            api_name = api_response.get("name", "").upper()
+        results = []
+        for index, row, int_idx, future in futures:
+            result = future.result()
+            results.append((index,row, int_idx, result))
+
+        for index, row, int_idx, result in results:
+            api_name = result.get("name", "").upper()
             api_name_parts = clean_name(api_name)
 
             # for relative_value in relative_values:
@@ -125,7 +129,8 @@ def process_file(file_path):
                 f"{row[first_name_column]} {row[last_name_column]}"
             )
 
-            # excel_name_parts = clean_name(f"{row['First Name']} {row['Last Name']}")
+            phone_number = row[phone_columns[int_idx]]
+            clean_number = clean_phone_number(phone_number)
 
             is_match = any(api_part in excel_name_parts for api_part in api_name_parts)
             light_green_fill = PatternFill(
@@ -147,6 +152,3 @@ def process_file(file_path):
                 sheet.cell(index + 2, col_index + 1).fill = light_red_fill
 
     wb.save(file_path)
-
-
-    return "processing complete"
